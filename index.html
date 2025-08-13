@@ -37,12 +37,12 @@
   </table>
 
   <script>
-    const getDirectUrl = (addr) =>
-      `https://api.getnimbus.io/v2/address/${addr}/holding?includePnl=false&chain=SOL`;
+    const getProxyUrl = (addr) =>
+      `/api/proxy?url=${encodeURIComponent(`https://api.getnimbus.io/v2/address/${addr}/holding?includePnl=false&chain=SOL`)}`;
 
     async function fetchAssets(address) {
       try {
-        const res = await fetch(getDirectUrl(address));
+        const res = await fetch(getProxyUrl(address));
         const json = await res.json();
         const data = json.data || [];
         let sol = 0, usdc = 0, solPrice = 0, usdcPrice = 1;
