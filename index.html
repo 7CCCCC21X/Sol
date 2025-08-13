@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Solana 钱包资产查询</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; color: #333 }
+    h2 { margin-bottom: 10px }
+    textarea { width: 100%; height: 120px; font-family: monospace; }
+    button { margin-top: 10px; padding: 10px 20px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px }
+    th, td { padding: 8px 12px; border: 1px solid #ccc; text-align: center; }
+    th { background: #f0f0f0 }
+    .ok { color: green; font-weight: bold }
+    .err { color: red }
+  </style>
+</head>
+<body>
+  <h2>📊 批量查询 Solana 钱包资产</h2>
+  <p>每行一个地址：</p>
+  <textarea id="input"></textarea>
+  <br>
+  <button onclick="start()">开始查询</button>
+  <table id="result" hidden>
+    <thead>
+      <tr>
+        <th>编号</th>
+        <th>地址</th>
+        <th>SOL</th>
+        <th>USDC</th>
+        <th>总价值 (USD)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const proxy = "/api/proxy?url=";
+    async function fetchHoldings(addr) {
+      const url = `https://api.getnimbus.io/v2/address/${addr}/holding?includePnl=false&chain=SOL`;
+      try {
+        const res = await fetch(proxy + encodeURIComponent(url));
+        const json = await res.json();
+        const data = json.data || [];
+        let sol = 0, usdc = 0;
+
+        for (const t of data) {
+          if (t.symbol === "SOL") sol = +t.amount;
+          else if (t.symbol === "USDC") usdc = +t.amount;
+        }
+
+        const solPrice = data.find(d => d.symbol === "SOL")?.rate || 0;
+        const usdcPrice = data.find(d => d.symbol === "USDC")?.rate || 1;
+
+        const total = sol * solPrice + usdc * usdcPrice;
+        return { sol, usdc, total };
+      } catch (e) {
+        return { sol: "❌", usdc: "❌", total: "❌" };
+      }
+    }
+
+    async function start() {
+      const lines = document.getElementById("input").value.trim().split("\n").filter(Boolean);
+      const tbody = document.querySelector("#result tbody");
+      tbody.innerHTML = "";
+      document.getElementById("result").hidden = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        const addr = lines[i].trim();
+        const row = document.createElement("tr");
+        const loading = `<td colspan="5">查询中...</td>`;
+        row.innerHTML = loading;
+        tbody.appendChild(row);
+
+        const { sol, usdc, total } = await fetchHoldings(addr);
+
+        row.innerHTML = `
+          <td>${i + 1}</td>
+          <td>${addr}</td>
+          <td>${typeof sol === 'number' ? sol.toFixed(6) : sol}</td>
+          <td>${typeof usdc === 'number' ? usdc.toFixed(6) : usdc}</td>
+          <td>${typeof total === 'number' ? "$" + total.toFixed(2) : total}</td>
+        `;
+      }
+    }
+  </script>
+</body>
+</html>
