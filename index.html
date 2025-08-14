@@ -1,98 +1,194 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>批量查询 Nimbus SOL & USDC</title>
-  <style>
-    body { font-family: sans-serif; padding: 20px; background: #f9fafb; color: #1f2937; }
-    textarea { width: 100%; height: 140px; font-family: monospace; padding: 10px; }
-    button { margin-top: 10px; padding: 10px 20px; font-weight: bold; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-    th { background: #f3f4f6; }
-    .err { color: red; font-weight: bold; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Solana 批量查询：SOL 余额 & USD 折算（s.1b.tc）</title>
+<style>
+  :root{
+    --bg:#f9fafb;--card:#fff;--text:#111827;--sub:#6b7280;--primary:#2563eb;
+    --ok:#16a34a;--err:#dc2626;--bd:#e5e7eb;
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",PingFang SC,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0}
+  .wrap{max-width:980px;margin:28px auto;padding:22px}
+  h2{margin:6px 0 18px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;box-shadow:0 8px 20px rgba(0,0,0,.05)}
+  textarea{width:100%;min-height:140px;border:1px solid var(--bd);border-radius:10px;padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px}
+  .row > *{flex:1}
+  select,input[type="number"]{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px}
+  button{background:var(--primary);color:#fff;border:0;border-radius:10px;padding:12px 16px;cursor:pointer;font-weight:700}
+  button:disabled{opacity:.6;cursor:not-allowed}
+  table{width:100%;border-collapse:collapse;margin-top:18px}
+  th,td{border:1px solid var(--bd);padding:10px 8px;text-align:center;white-space:nowrap}
+  th{background:#f3f4f6}
+  .note{color:var(--sub);font-size:13px;margin-top:8px}
+  .muted{color:var(--sub)}
+  .footer{margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .err{color:var(--err);font-weight:700}
+  .total{font-weight:700}
+  .left{text-align:left}
+</style>
 </head>
 <body>
-  <h2>📊 批量查询 Nimbus 钱包余额（SOL & USDC）</h2>
-  <p>每行一个 Solana 地址：</p>
-  <textarea id="input"></textarea>
-  <br />
-  <button onclick="start()">开始查询</button>
+<div class="wrap">
+  <h2>📊 批量查询 Solana 余额（SOL → USD）— 直连 <code>s.1b.tc</code></h2>
 
-  <table id="result" hidden>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>地址</th>
-        <th>SOL</th>
-        <th>USDC</th>
-        <th>总估值 (USD)</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <div class="card">
+    <label>地址列表（每行一个）</label>
+    <textarea id="addrs" placeholder="一行一个 Solana 地址"></textarea>
 
-  <script>
-    const solPriceAPI = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd";
+    <div class="row">
+      <div>
+        <label>SOL 价格源</label>
+        <select id="priceSrc">
+          <option value="max">两者取高（推荐）</option>
+          <option value="coingecko">CoinGecko</option>
+          <option value="cryptocompare">CryptoCompare</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="run">开始查询</button>
+      </div>
+    </div>
 
-    async function getSolPrice() {
-      try {
-        const res = await fetch(solPriceAPI);
-        const json = await res.json();
-        return json.solana.usd || 0;
-      } catch {
-        return 0;
-      }
-    }
+    <div class="note">
+      • 前端请求将发送到你的 <code>/api/solana</code>（Vercel 无服务器函数），后端**直接**调用 <code>https://s.1b.tc/888/solana</code>，无其它数据源回退。<br>
+      • 如果目标接口响应结构与你预期不同，页面会提示“返回结构无法识别”，此时请把实际返回样例粘给我以便定制解析。
+    </div>
+  </div>
 
-    async function fetchNimbus(address) {
-      const proxy = "/api/nimbus";
-      try {
-        const res = await fetch(proxy + "?address=" + address);
-        const json = await res.json();
-        return json.data || [];
-      } catch {
-        return null;
-      }
-    }
+  <div class="card" style="margin-top:16px">
+    <div class="footer">
+      <div class="muted" id="status">待开始</div>
+      <div>
+        <button id="export">导出 CSV</button>
+      </div>
+    </div>
 
-    async function start() {
-      const addresses = document.getElementById("input").value.trim().split("\n").filter(x => x);
-      const tbody = document.querySelector("#result tbody");
-      const solPrice = await getSolPrice();
-      document.getElementById("result").hidden = false;
-      tbody.innerHTML = "";
+    <table id="tbl" hidden>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th class="left">地址</th>
+          <th>SOL</th>
+          <th>SOL 单价 (USD)</th>
+          <th>折算 (USD)</th>
+          <th>数据来源</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+      <tfoot>
+        <tr class="total">
+          <td colspan="2">合计</td>
+          <td id="sumSol">0</td>
+          <td id="priceCell">—</td>
+          <td id="sumUsd">$0.00</td>
+          <td id="sourceCell">s.1b.tc</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
 
-      for (let i = 0; i < addresses.length; i++) {
-        const addr = addresses[i].trim();
-        const row = document.createElement("tr");
-        row.innerHTML = `<td>${i + 1}</td><td>${addr}</td><td colspan="3">查询中...</td>`;
-        tbody.appendChild(row);
+<script>
+const $ = s => document.querySelector(s);
+const fmtSol = n => Number(n).toLocaleString('en-US',{maximumFractionDigits:9});
+const fmtUsd = n => '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-        const data = await fetchNimbus(addr);
-        if (!data) {
-          row.innerHTML = `<td>${i + 1}</td><td>${addr}</td><td class="err">❌</td><td class="err">❌</td><td class="err">❌</td>`;
-          continue;
-        }
+// --- 价格 ---
+async function getSolPrice(src){
+  async function cg(){
+    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
+    const j = await r.json(); return j?.solana?.usd || 0;
+  }
+  async function cc(){
+    const r = await fetch('https://min-api.cryptocompare.com/data/price?fsym=SOL&tsyms=USD');
+    const j = await r.json(); return j?.USD || 0;
+  }
+  if(src==='coingecko') return {price: await cg(), source:'CoinGecko'};
+  if(src==='cryptocompare') return {price: await cc(), source:'CryptoCompare'};
+  const [a,b] = await Promise.all([cg(),cc()]);
+  const price = Math.max(a||0,b||0);
+  return {price, source: price===(a||0)?'CoinGecko（两者取高）':'CryptoCompare（两者取高）'};
+}
 
-        let sol = 0, usdc = 0;
-        for (const token of data) {
-          if (token.symbol === "SOL") sol = +token.amount;
-          if (token.symbol === "USDC") usdc = +token.amount;
-        }
-        const total = sol * solPrice + usdc;
+// --- 直连后端（后端再直连 s.1b.tc） ---
+async function queryBalances(addresses){
+  const r = await fetch('/api/solana', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({addresses})
+  });
+  if(!r.ok) throw new Error('后端返回状态：'+r.status);
+  const j = await r.json();
+  if(!j || !j.ok || !j.balances) throw new Error(j?.error || '返回结构无法识别');
+  return j.balances; // { address: lamports }
+}
 
-        row.innerHTML = `
-          <td>${i + 1}</td>
-          <td>${addr}</td>
-          <td>${sol.toFixed(6)}</td>
-          <td>${usdc.toFixed(6)}</td>
-          <td>$${total.toFixed(2)}</td>
-        `;
-      }
-    }
-  </script>
+function toCSV(rows){
+  return rows.map(r=>r.map(x=>String(x).includes(',')?`"${String(x).replace(/"/g,'""')}"`:x).join(',')).join('\n');
+}
+
+$('#run').addEventListener('click', async ()=>{
+  const addrs = $('#addrs').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(addrs.length===0){ alert('请粘贴至少一个地址'); return; }
+
+  $('#tbl').hidden = false;
+  $('#status').textContent = '正在获取 SOL 单价…';
+  $('tbody').innerHTML = '';
+  $('#sumSol').textContent = '0';
+  $('#sumUsd').textContent = '$0.00';
+  $('#priceCell').textContent = '—';
+  $('#sourceCell').textContent = 's.1b.tc';
+
+  const {price, source} = await getSolPrice($('#priceSrc').value);
+  $('#priceCell').textContent = price ? fmtUsd(price) : '—';
+  $('#status').textContent = '正在通过后端直连 s.1b.tc 批量查询…';
+
+  try{
+    const balances = await queryBalances(addrs); // {addr: lamports}
+    const rows = [];
+    let sumSol = 0, sumUsd = 0;
+
+    addrs.forEach((addr, i)=>{
+      const lamports = Number(balances[addr] ?? 0);
+      const sol = lamports / 1e9;
+      const usd = sol * (price||0);
+      sumSol += sol; sumUsd += usd;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td class="left">${addr}</td>
+        <td>${fmtSol(sol)}</td>
+        <td>${fmtUsd(price||0)}</td>
+        <td>${fmtUsd(usd)}</td>
+        <td>s.1b.tc</td>`;
+      $('tbody').appendChild(tr);
+      rows.push([i+1, addr, sol, price||0, usd, 's.1b.tc']);
+    });
+
+    $('#sumSol').textContent = fmtSol(sumSol);
+    $('#sumUsd').textContent = fmtUsd(sumUsd);
+    $('#status').textContent = `完成：${addrs.length} 个地址（价格源：${source}）`;
+
+    $('#export').onclick = ()=>{
+      const header = [['#','Address','SOL','SOL Price (USD)','Total (USD)','Source']];
+      const csv = toCSV(header.concat(rows));
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'sol_balances.csv';
+      a.click();
+    };
+  }catch(e){
+    $('#status').textContent = '查询失败：' + (e?.message || e);
+    alert('查询失败：' + (e?.message || e));
+  }
+});
+</script>
 </body>
 </html>
