@@ -1,26 +1,64 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh">
 <head>
-  <meta charset="utf‑8">
-  <title>批量查询 Solana 余额</title>
+  <meta charset="UTF-8">
+  <title>Solana 批量余额查询</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f9fafb;
+      color: #111;
+    }
+    textarea {
+      width: 100%;
+      height: 160px;
+      font-size: 14px;
+      padding: 10px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #1d4ed8;
+    }
+    pre {
+      margin-top: 20px;
+      background: #f1f5f9;
+      padding: 15px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      border: 1px solid #ddd;
+    }
+  </style>
 </head>
 <body>
-  <h2>批量查询 Solana 地址余额</h2>
-  <textarea id="addresses" rows="8" cols="60" placeholder="每行一个地址"></textarea><br>
-  <button id="query">查询余额</button>
+  <h2>🔍 批量查询 Solana 地址余额</h2>
+  <textarea id="addresses" placeholder="每行输入一个 Solana 地址"></textarea><br>
+  <button id="query">开始查询</button>
   <pre id="output"></pre>
 
   <script>
-    const rpcUrl = 'https://s.1b.tc/888/solana';  // 替换成你实际的 RPC 接口
+    const rpcUrl = 'https://sol-dsvxfkat3-7ccccc21xs-projects.vercel.app/api/proxy';
 
     document.getElementById('query').onclick = async () => {
       const raw = document.getElementById('addresses').value.trim();
+      const output = document.getElementById('output');
+      output.textContent = '⏳ 查询中...';
+
       if (!raw) {
         alert('请输入至少一个地址');
         return;
       }
 
-      const addresses = raw.split(/\\s+/);
+      const addresses = raw.split(/\s+/);
       const requests = addresses.map((addr, idx) => ({
         jsonrpc: "2.0",
         id: idx + 1,
@@ -29,26 +67,27 @@
       }));
 
       try {
-        const resp = await fetch(rpcUrl, {
+        const res = await fetch(rpcUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify(requests)
         });
 
-        if (!resp.ok) throw new Error('网络错误：' + resp.status);
+        if (!res.ok) throw new Error('网络请求失败，状态码: ' + res.status);
 
-        const results = await resp.json();
-        const out = results.map(r => {
+        const results = await res.json();
+        const text = results.map(r => {
           const addr = addresses[r.id - 1];
-          if (r.error) return `${addr} → 错误: ${r.error.message}`;
-          // 返回的是 lamports，1 SOL = 1e9 lamports
+          if (r.error) return `${addr} → ❌ 错误: ${r.error.message}`;
           const sol = r.result.value / 1e9;
-          return `${addr} → ${sol} SOL`;
-        }).join('\\n');
+          return `${addr} → ✅ ${sol} SOL`;
+        }).join('\n');
 
-        document.getElementById('output').textContent = out;
+        output.textContent = text;
       } catch (err) {
-        document.getElementById('output').textContent = '请求失败：' + err;
+        output.textContent = '❌ 请求失败: ' + err.message;
       }
     };
   </script>
